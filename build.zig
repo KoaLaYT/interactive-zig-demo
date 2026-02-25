@@ -13,6 +13,9 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    libgame.root_module.linkSystemLibrary("ncurses", .{
+        .preferred_link_mode = .dynamic,
+    });
     const install_libgame = b.addInstallArtifact(libgame, .{});
 
     const exe = b.addExecutable(.{
@@ -24,7 +27,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     // DO NOT LINK HERE, we use dlopen link it at run time.
-    // exe.linkLibrary(libgame);
+    // exe.root_module.linkLibrary(libgame);
     const install_exe = b.addInstallArtifact(exe, .{});
 
     const lib_step = b.step("lib", "Build the game library only");

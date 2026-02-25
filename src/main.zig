@@ -1,14 +1,18 @@
 const std = @import("std");
+const Allocator = @import("std").mem.Allocator;
+
 const State = @import("game_api.zig").State;
 const Api = @import("game_api.zig").Api;
+
+const c = @cImport({
+    @cInclude("sys/stat.h");
+});
 
 const Game = struct {
     lib: ?std.DynLib,
     inode: std.c.ino_t,
     state: ?State,
     api: *const Api,
-
-    // TODO
 
     fn init() Game {
         return .{
@@ -19,10 +23,10 @@ const Game = struct {
         };
     }
 
-    fn deinit(self: *Game) void {
+    fn deinit(self: *Game, alloc_ptr: *anyopaque) void {
         if (self.lib) |*lib| {
             if (self.state) |*s| {
-                self.api.finalize(s);
+                self.api.finalize(s, alloc_ptr);
             }
             lib.close();
         }
@@ -33,7 +37,7 @@ const Game = struct {
         self.api = undefined;
     }
 
-    fn load(self: *Game, lib_path: []u8) !void {
+    fn load(self: *Game, alloc_ptr: *anyopaque, lib_path: []u8) !void {
         const f = try std.fs.openFileAbsolute(lib_path, .{});
         defer f.close();
         const stat = try f.stat();
@@ -49,8 +53,10 @@ const Game = struct {
             var lib = try std.DynLib.open(lib_path);
             self.api = lib.lookup(*const Api, "api").?;
             self.lib = lib;
+            self.inode = stat.inode;
+
             if (self.state == null) {
-                self.state = self.api.init();
+                self.state = self.api.init(alloc_ptr);
             }
 
             if (self.state) |*s| {
@@ -59,10 +65,11 @@ const Game = struct {
         }
     }
 
-    fn run(self: *Game) void {
+    fn run(self: *Game) bool {
         if (self.state) |*s| {
-            self.api.next(s);
+            return self.api.step(s);
         }
+        return false;
     }
 };
 
@@ -72,12 +79,19 @@ pub fn main() !void {
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const lib_path = try std.fmt.bufPrint(&path_buf, "{s}/../lib/libgame.dylib", .{exe_dir});
 
+    var gpa = std.heap.DebugAllocator(.{}).init;
+    defer _ = gpa.deinit();
+    var allocator = gpa.allocator();
+    const opaque_ptr: *anyopaque = @ptrCast(&allocator);
+
     var g = Game.init();
-    defer g.deinit();
+    defer g.deinit(opaque_ptr);
 
     while (true) {
-        try g.load(lib_path);
-        g.run();
-        std.Thread.sleep(100000000);
+        try g.load(opaque_ptr, lib_path);
+        if (!g.run()) {
+            break;
+        }
+        std.Thread.sleep(100 * std.time.ns_per_ms);
     }
 }
