@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    b.installArtifact(libgame);
+    const install_libgame = b.addInstallArtifact(libgame, .{});
 
     const exe = b.addExecutable(.{
         .name = "main",
@@ -23,8 +23,12 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    exe.linkLibrary(libgame);
+    // DO NOT LINK HERE, we use dlopen link it at run time.
+    // exe.linkLibrary(libgame);
     b.installArtifact(exe);
+
+    const lib_step = b.step("lib", "Build the game library only");
+    lib_step.dependOn(&install_libgame.step);
 
     const run_step = b.step("run", "Run the app");
     const run_cmd = b.addRunArtifact(exe);
