@@ -4,10 +4,6 @@ const Allocator = @import("std").mem.Allocator;
 const State = @import("game_api.zig").State;
 const Api = @import("game_api.zig").Api;
 
-const c = @cImport({
-    @cInclude("sys/stat.h");
-});
-
 const Game = struct {
     lib: ?std.DynLib,
     inode: std.c.ino_t,
