@@ -25,15 +25,19 @@ pub fn build(b: *std.Build) void {
     });
     // DO NOT LINK HERE, we use dlopen link it at run time.
     // exe.linkLibrary(libgame);
-    b.installArtifact(exe);
+    const install_exe = b.addInstallArtifact(exe, .{});
 
     const lib_step = b.step("lib", "Build the game library only");
     lib_step.dependOn(&install_libgame.step);
 
+    const all_step = b.step("all", "Build and install both exe and library");
+    all_step.dependOn(&install_libgame.step);
+    all_step.dependOn(&install_exe.step);
+
     const run_step = b.step("run", "Run the app");
     const run_cmd = b.addRunArtifact(exe);
+    run_cmd.step.dependOn(all_step);
     run_step.dependOn(&run_cmd.step);
-    run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }

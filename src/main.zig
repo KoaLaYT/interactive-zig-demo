@@ -1,9 +1,12 @@
 const std = @import("std");
+const State = @import("game_api.zig").State;
+const Api = @import("game_api.zig").Api;
 
 const Game = struct {
     lib: ?std.DynLib,
     inode: std.c.ino_t,
-    hello: *const fn () void,
+    state: ?State,
+    api: *const Api,
 
     // TODO
 
@@ -11,14 +14,23 @@ const Game = struct {
         return .{
             .lib = null,
             .inode = 0,
-            .hello = undefined,
+            .state = null,
+            .api = undefined,
         };
     }
 
     fn deinit(self: *Game) void {
         if (self.lib) |*lib| {
+            if (self.state) |*s| {
+                self.api.finalize(s);
+            }
             lib.close();
         }
+
+        self.lib = null;
+        self.inode = 0;
+        self.state = null;
+        self.api = undefined;
     }
 
     fn load(self: *Game, lib_path: []u8) !void {
@@ -28,16 +40,30 @@ const Game = struct {
 
         if (stat.inode != self.inode) {
             if (self.lib) |*lib| {
+                if (self.state) |*s| {
+                    self.api.unload(s);
+                }
                 lib.close();
             }
 
             var lib = try std.DynLib.open(lib_path);
-            self.hello = lib.lookup(*const fn () void, "hello").?;
+            self.api = lib.lookup(*const Api, "api").?;
             self.lib = lib;
+            if (self.state == null) {
+                self.state = self.api.init();
+            }
+
+            if (self.state) |*s| {
+                self.api.reload(s);
+            }
         }
     }
 
-    fn run() void {}
+    fn run(self: *Game) void {
+        if (self.state) |*s| {
+            self.api.next(s);
+        }
+    }
 };
 
 pub fn main() !void {
@@ -51,7 +77,7 @@ pub fn main() !void {
 
     while (true) {
         try g.load(lib_path);
-        g.hello();
+        g.run();
         std.Thread.sleep(100000000);
     }
 }
