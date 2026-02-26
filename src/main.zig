@@ -7,42 +7,33 @@ const Api = @import("game_api.zig").Api;
 const Game = struct {
     lib: ?std.DynLib,
     inode: std.c.ino_t,
-    state: ?State,
+    state: State,
     api: *const Api,
 
-    fn init() Game {
+    fn init(alloc_ptr: *anyopaque) Game {
         return .{
             .lib = null,
             .inode = 0,
-            .state = null,
+            .state = State.init(alloc_ptr),
             .api = undefined,
         };
     }
 
-    fn deinit(self: *Game, alloc_ptr: *anyopaque) void {
+    fn deinit(self: *Game) void {
         if (self.lib) |*lib| {
-            if (self.state) |*s| {
-                self.api.finalize(s, alloc_ptr);
-            }
+            self.api.finalize(&self.state);
             lib.close();
         }
-
-        self.lib = null;
-        self.inode = 0;
-        self.state = null;
-        self.api = undefined;
     }
 
-    fn load(self: *Game, alloc_ptr: *anyopaque, lib_path: []u8) !void {
+    fn load(self: *Game, lib_path: []u8) !void {
         const f = try std.fs.openFileAbsolute(lib_path, .{});
         defer f.close();
         const stat = try f.stat();
 
         if (stat.inode != self.inode) {
             if (self.lib) |*lib| {
-                if (self.state) |*s| {
-                    self.api.unload(s);
-                }
+                self.api.unload(&self.state);
                 lib.close();
             }
 
@@ -51,43 +42,41 @@ const Game = struct {
             self.lib = lib;
             self.inode = stat.inode;
 
-            if (self.state == null) {
-                self.state = self.api.init(alloc_ptr);
+            if (!self.state.has_init) {
+                self.api.init(&self.state);
             }
 
-            if (self.state) |*s| {
-                self.api.reload(s);
-            }
+            self.api.reload(&self.state);
         }
     }
 
     fn run(self: *Game) bool {
-        if (self.state) |*s| {
-            return self.api.step(s);
-        }
-        return false;
+        return self.api.step(&self.state);
     }
 };
 
 pub fn main() !void {
-    var buf: [std.fs.max_path_bytes]u8 = undefined;
-    const exe_dir = try std.fs.selfExeDirPath(&buf);
-    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const lib_path = try std.fmt.bufPrint(&path_buf, "{s}/../lib/libgame.dylib", .{exe_dir});
-
     var gpa = std.heap.DebugAllocator(.{}).init;
     defer _ = gpa.deinit();
-    var allocator = gpa.allocator();
-    const opaque_ptr: *anyopaque = @ptrCast(&allocator);
+    var alloc = gpa.allocator();
 
-    var g = Game.init();
-    defer g.deinit(opaque_ptr);
+    const lib_path = try find_lib_path(alloc);
+    defer alloc.free(lib_path);
+
+    var g = Game.init(@ptrCast(&alloc));
+    defer g.deinit();
 
     while (true) {
-        try g.load(opaque_ptr, lib_path);
+        try g.load(lib_path);
         if (!g.run()) {
             break;
         }
         std.Thread.sleep(100 * std.time.ns_per_ms);
     }
+}
+
+fn find_lib_path(alloc: Allocator) ![]u8 {
+    const exe_dir = try std.fs.selfExeDirPathAlloc(alloc);
+    defer alloc.free(exe_dir);
+    return try std.fmt.allocPrint(alloc, "{s}/../lib/libgame.dylib", .{exe_dir});
 }

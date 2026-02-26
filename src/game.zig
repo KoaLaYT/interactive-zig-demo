@@ -8,8 +8,8 @@ const c = @cImport({
     @cInclude("ncurses.h");
 });
 
-fn init(alloc_ptr: *anyopaque) callconv(.c) State {
-    const alloc: *std.mem.Allocator = @ptrCast(@alignCast(alloc_ptr));
+fn init(s: *State) callconv(.c) void {
+    const alloc: *std.mem.Allocator = @ptrCast(@alignCast(s.alloc_ptr));
 
     _ = c.initscr(); // peek at terminal size
     const width: u64 = @intCast(c.getmaxx(c.stdscr));
@@ -18,18 +18,16 @@ fn init(alloc_ptr: *anyopaque) callconv(.c) State {
 
     const cells = alloc.alloc(u8, width * height * 2) catch unreachable;
 
-    var s = State{
-        .width = width,
-        .height = height,
-        .select = false,
-        .cells = cells.ptr,
-    };
+    s.width = width;
+    s.height = height;
+    s.select = false;
+    s.cells = cells.ptr;
+    s.has_init = true;
     s.randomize();
-    return s;
 }
 
-fn finalize(s: *State, alloc_ptr: *anyopaque) callconv(.c) void {
-    const alloc: *std.mem.Allocator = @ptrCast(@alignCast(alloc_ptr));
+fn finalize(s: *State) callconv(.c) void {
+    const alloc: *std.mem.Allocator = @ptrCast(@alignCast(s.alloc_ptr));
     alloc.free(s.cells[0 .. s.width * s.height * 2]);
 }
 
@@ -67,7 +65,6 @@ fn step(s: *State) callconv(.c) bool {
 
 fn draw(s: *State) void {
     _ = c.move(0, 0);
-
     for (0..s.height) |y| {
         for (0..s.width) |x| {
             const ch = if (s.get(x, y) > 0) ' ' | c.A_REVERSE else ' ';

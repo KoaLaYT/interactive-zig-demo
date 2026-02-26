@@ -6,8 +6,21 @@ pub const State = extern struct {
     height: u64,
     select: bool,
     cells: [*]u8,
+    has_init: bool,
+    alloc_ptr: *anyopaque,
 
     const Self = State;
+
+    pub fn init(alloc_ptr: *anyopaque) Self {
+        return .{
+            .width = 0,
+            .height = 0,
+            .select = false,
+            .cells = undefined,
+            .has_init = false,
+            .alloc_ptr = alloc_ptr,
+        };
+    }
 
     pub fn randomize(s: *Self) void {
         for (0..s.height) |y| {
@@ -76,8 +89,8 @@ pub const State = extern struct {
 };
 
 pub const Api = extern struct {
-    init: *const fn (alloc_ptr: *anyopaque) callconv(.c) State,
-    finalize: *const fn (s: *State, alloc_ptr: *anyopaque) callconv(.c) void,
+    init: *const fn (*State) callconv(.c) void,
+    finalize: *const fn (*State) callconv(.c) void,
     reload: *const fn (*State) callconv(.c) void,
     unload: *const fn (*State) callconv(.c) void,
     step: *const fn (*State) callconv(.c) bool,
